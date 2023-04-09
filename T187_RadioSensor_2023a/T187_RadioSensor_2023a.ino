@@ -9,7 +9,8 @@
 #include <SPI.h>
 //#include <Astrid.h>
 #include <VillaAstridCommon.h>
-#include <SimpleTimer.h> 
+#include <TaHa.h>
+//#include <SimpleTimer.h> 
 //#include <SmartLoop.h>
 #include <DHT.h>
 
@@ -19,6 +20,12 @@
 #define DHTTYPE           DHT22     // DHT 22 (AM2302)
 #define ZONE  "OD_1"
 #define MINUTES_BTW_MSG   10
+
+#define UNIT_ID           'O'
+#define TYPE_TEMP         'T'
+#define TYPE_HUMIDITY     'H'
+#define TYPE_LIGHT        'L'
+
 
 // Software SPI (slower updates, more flexible pin options):
 // pin 7 - Serial clock out (SCLK)
@@ -86,7 +93,10 @@ boolean SerialFlag;
 RH_RF69 rf69(RFM69_CS, RFM69_INT);
 SFE_BMP180 bmp180;
 
-SimpleTimer timer;
+//SimpleTimer timer;
+TaHa run_1sec_handle;
+TaHa run_10sec_handle;
+
 float Temp1;
 float Hum1;
 float Light1;
@@ -147,19 +157,116 @@ void setup() {
     }
 
     //timer.setInterval(10, run_10ms);
-    timer.setInterval(1000, run_1000ms);
-    timer.setInterval(10000, run_10s);
+    run_1sec_handle.set_interval(1000, RUN_RECURRING, run_1000ms);
+    run_10sec_handle.set_interval(1000, RUN_RECURRING, run_10s);
 }
 
 void loop() {
-    timer.run();
+    run_1sec_handle.run();
+    run_10sec_handle.run();
     byte i;
 
-    String tempString;
-    char radiopacket[30];  // = "Hello World #";
+    if (Serial.available() > 0) 
+    {    // read the incoming byte:
+        char cin = Serial.read();
+        parse_serial(cin);
+    }
+
+    //char radiopacket[30];  // = "Hello World #";
 
 }
 
+#define MAX_VALUE_LEN  16
+
+void parse_serial(char c)
+{
+    static uint8_t  state = 0;
+    static char     type = 0x00; 
+    static char     indx = '0' ;
+    static char     value_str[16] ={0};
+    static uint8_t  value_pos = 0;
+    String          float_string;
+
+    //Serial.print("parse: "); Serial.print(state, DEC); Serial.print(" - "); Serial.println(c, DEC);
+    switch(state)
+    {
+        case 0:
+            if (c=='<') 
+            {
+               state++;
+               memset(value_str,0x00, MAX_VALUE_LEN);
+               value_pos = 0;
+            }   
+            break;
+        case 1:
+            if (c==UNIT_ID) state++;
+            else state=0; 
+            break;
+        case 2:
+            if ((c==TYPE_TEMP) || (c==TYPE_HUMIDITY) || (c==TYPE_LIGHT))
+            {
+                type = c;
+                state++;
+            }
+          else  state = 0;
+            break;
+        case 3:
+            indx = c;
+            state++;
+            break;
+        case 4:
+            if (c==':') state++;
+            else state=0; 
+            break;
+        case 5:
+            if (c=='>') 
+            {
+                String float_string = String(value_str);
+                float f_value = float_string.toFloat();
+                // char sensor[8];
+                switch(type)
+                {
+                    case TYPE_TEMP:
+                        if (indx == '1')
+                        {
+                            if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Temp2",f_value,"") > 0 ) radiate_msg(radio_packet);
+                        }
+                        break;
+                    case TYPE_HUMIDITY:
+                        if (indx == '1')
+                        {
+                            if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Hum2",f_value,"") > 0 ) radiate_msg(radio_packet);
+                        }
+                        break;
+                    case TYPE_LIGHT:
+                        switch(indx)
+                        {
+                            case  '1': 
+                                if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Light1",f_value,"") > 0 ) radiate_msg(radio_packet);
+                                break;
+                            case  '2': 
+                                if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Light2",f_value,"") > 0 ) radiate_msg(radio_packet);
+                                break;
+                            case  '3': 
+                                if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Light3",f_value,"") > 0 ) radiate_msg(radio_packet);
+                                break;
+                        }
+                        
+                        break;
+                }
+                state = 0;
+            }
+            else
+             {
+                if (value_pos < (MAX_VALUE_LEN-1) ) value_str[value_pos++] = c;
+                else state = 0;
+             };
+            break;
+        case 6:
+
+            break;
+    }
+}
 int ConvertFloatSensorToJsonRadioPacket(char *zone, char *sensor, float value, char *remark ){
     byte i;
     unsigned int json_len;
