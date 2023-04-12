@@ -1,4 +1,11 @@
-
+/**
+ *  T187 Radio Sensor
+ *  Read sensor values and send over RFM69
+ *  - BMP180 Temperature and humidity
+ *  - Serial sensor messages
+ *  - 
+ * 
+ */
 // Define message groups to be supported (Astrid.h)
 #include <AstridAddrSpace.h>
 
@@ -10,14 +17,7 @@
 //#include <Astrid.h>
 #include <VillaAstridCommon.h>
 #include <TaHa.h>
-//#include <SimpleTimer.h> 
-//#include <SmartLoop.h>
-#include <DHT.h>
 
-
-
-#define DHTPIN            8        // Pin which is connected to the DHT sensor.
-#define DHTTYPE           DHT22     // DHT 22 (AM2302)
 #define ZONE  "OD_1"
 #define MINUTES_BTW_MSG   10
 
@@ -26,35 +26,6 @@
 #define TYPE_HUMIDITY     'H'
 #define TYPE_LIGHT        'L'
 
-
-// Software SPI (slower updates, more flexible pin options):
-// pin 7 - Serial clock out (SCLK)
-// pin 6 - Serial data out (DIN)
-// pin 5 - Data/Command select (D/C)
-// pin 4 - LCD chip select (CS)
-// pin 3 - LCD reset (RST)
-
-//DHT_Unified dht(DHTPIN, DHTTYPE);
-
-// Hardware SPI (faster, but must use certain hardware pins):
-// SCK is LCD serial clock (SCLK) - this is pin 13 on Arduino Uno
-// MOSI is LCD DIN - this is pin 11 on an Arduino Uno
-// pin 5 - Data/Command select (D/C)
-// pin 4 - LCD chip select (CS)
-// pin 3 - LCD reset (RST)
-// Adafruit_PCD8544 display = Adafruit_PCD8544(5, 4, 3);
-// Note with hardware SPI MISO and SS pins aren't used but will still be read
-// and written to during SPI transfer.  Be careful sharing these pins!
-
-//#define NUMFLAKES 10
-//#define XPOS 0
-//#define YPOS 1
-//#define DELTAY 2
-
-//#define DISPL_BUFF_LEN 10
-
-//#define LOGO16_GLCD_HEIGHT 16
-//#define LOGO16_GLCD_WIDTH  16
 
 //*********************************************************************************************
 // *********** IMPORTANT SETTINGS - YOU MUST CHANGE/ONFIGURE TO FIT YOUR HARDWARE *************
@@ -68,7 +39,7 @@
 #define FREQUENCY     RF69_433MHZ
 //#define FREQUENCY     RF69_868MHZ
 //#define FREQUENCY      RF69_915MHZ
-#define ENCRYPTKEY     "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
+//#define ENCRYPTKEY     "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
 #define IS_RFM69HCW    true // set to 'true' if you are using an RFM69HCW module
 
 //*********************************************************************************************
@@ -83,9 +54,7 @@
 #define ENCRYPTKEY     "VillaAstrid_2003" //exactly the same 16 characters/bytes on all nodes!
 
 #define LED           13  // onboard blinky
-#define LDR1          A0
-#define LDR2         A1
-//unit_type_entry Me ={"MH1T1","Terminal","T171","T171","T171","17v01",'0'}; //len = 9,5,5,5,9,byte
+
 time_type MyTime = {2017, 1,30,12,05,55}; 
 int16_t packetnum = 0;  // packet counter, we increment per xmission
 boolean msgReady;       //Serial.begin(SERIAL_BAUD
@@ -97,16 +66,12 @@ SFE_BMP180 bmp180;
 TaHa run_1sec_handle;
 TaHa run_10sec_handle;
 
-float Temp1;
-float Hum1;
-float Light1;
-float Light2;
+
 double Pressure_BMP180;
 double Temp_BMP180;
-DHT dht(DHTPIN, DHTTYPE);
 char radio_packet[MAX_MESSAGE_LEN];
-//char radio_packet[RH_RF69_MAX_MESSAGE_LEN];
-//sensors_event_t Sensor1; 
+
+
 byte rad_turn = 0;
 byte read_turn = 0;
 uint8_t eKey[] ="VillaAstrid_2003"; //exactly the same 16 characters/bytes on all nodes!
@@ -312,30 +277,19 @@ void radiate_msg( char *radio_msg ) {
 
 void ReadSensors(void){
   char status;
-  if (++read_turn > 8) read_turn = 1;
-  switch(read_turn){
+  if (++read_turn > 4) read_turn = 1;
+  switch(read_turn)
+  {
      case 1:
-        Temp1= dht.readTemperature();
-        break;
-     case 2:  
-        Hum1 = dht.readHumidity();
-        break;
-      case 3:  
-         Light1 = float(analogRead(LDR1))/1024; 
-         break;
-      case 4:  
-         Light2 = float(analogRead(LDR2))/1024; 
-         break;
-      case 5:  
          status = bmp180.startTemperature();
          break;
-      case 6:  
+      case 2:  
          status= bmp180.getTemperature(Temp_BMP180);
          break;
-     case 7:  
+     case 3:  
          status = bmp180.startPressure(3);
          break;
-      case 8:  
+      case 4:  
          status= bmp180.getPressure(Pressure_BMP180,Temp_BMP180);
          break;
     }
@@ -373,25 +327,14 @@ void run_1000ms(void){
 }
 
 void transmit_one_msg(void){
-   if (++rad_turn > 6) rad_turn = 1;
-   switch(rad_turn){
-   case 1:
-      if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Temp",Temp1,"") > 0 ) radiate_msg(radio_packet);
-      break;
-    case 2:
-      if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Hum",Hum1,"") > 0 ) radiate_msg(radio_packet);
-      break;
-    case 3:
-      if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Light1",Light1,"") > 0 ) radiate_msg(radio_packet);
-      break;
-    case 4:
-      if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Light2",Light2,"") > 0 ) radiate_msg(radio_packet);
-      break;
-    case 5:   
-      if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Temp2",float(Temp_BMP180),"") > 0 ) radiate_msg(radio_packet);
-      break;
-    case 6:   
-      if (ConvertFloatSensorToJsonRadioPacket(ZONE,"P_mb",float(Pressure_BMP180),"") > 0 ) radiate_msg(radio_packet);
-      break;
+    if (++rad_turn > 2) rad_turn = 1;
+    switch(rad_turn)
+    {
+        case 1:
+          if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Temp2",float(Temp_BMP180),"") > 0 ) radiate_msg(radio_packet);
+          break;
+        case 2:   
+          if (ConvertFloatSensorToJsonRadioPacket(ZONE,"P_mb",float(Pressure_BMP180),"") > 0 ) radiate_msg(radio_packet);
+         break;
     }
 }
