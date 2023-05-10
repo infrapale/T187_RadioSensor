@@ -11,12 +11,13 @@
 
 #include <Arduino.h>
 #include <Wire.h>
-#include <SFE_BMP180.h>
 #include <RH_RF69.h>
 #include <SPI.h>
 //#include <Astrid.h>
 #include <VillaAstridCommon.h>
 #include <TaHa.h>
+#include "avr_watchdog.h"
+
 
 #define ZONE  "OD_1"
 #define MINUTES_BTW_MSG   10
@@ -53,55 +54,48 @@
 #define RFM69_RST     9
 #define ENCRYPTKEY     "VillaAstrid_2003" //exactly the same 16 characters/bytes on all nodes!
 
-#define LED           13  // onboard blinky
+#define LED_PIN       13  // onboard blinky
 
-time_type MyTime = {2017, 1,30,12,05,55}; 
+AVR_Watchdog   watchdog(4);
 int16_t packetnum = 0;  // packet counter, we increment per xmission
 boolean msgReady;       //Serial.begin(SERIAL_BAUD
 boolean SerialFlag;
 RH_RF69 rf69(RFM69_CS, RFM69_INT);
-SFE_BMP180 bmp180;
 
 //SimpleTimer timer;
 TaHa run_1sec_handle;
-TaHa run_10sec_handle;
+TaHa run_led_off_handle;
 
 
-double Pressure_BMP180;
-double Temp_BMP180;
-char radio_packet[MAX_MESSAGE_LEN];
-
-
-byte rad_turn = 0;
-byte read_turn = 0;
+char    radio_packet[MAX_MESSAGE_LEN];
 uint8_t eKey[] ="VillaAstrid_2003"; //exactly the same 16 characters/bytes on all nodes!
-byte msg_interval_minutes = MINUTES_BTW_MSG ;
 
 void setup() {
     //while (!Serial); // wait until serial console is open, remove if not tethered to computer
     delay(2000);
     Serial.begin(9600);
-    //Smart.begin(9600);
-    dht.begin();
     Serial.println("T187 RFM69HCW Radio Sensor");
   
     // Hard Reset the RFM module
-    pinMode(LED, OUTPUT);
+    pinMode(LED_PIN, OUTPUT);
     pinMode(RFM69_RST, OUTPUT);
     digitalWrite(RFM69_RST, LOW);
     
     Serial.println("RFM69 TX Test!");
     digitalWrite(RFM69_RST, HIGH);    delay(100);
     digitalWrite(RFM69_RST, LOW);    delay(100);
+    watchdog.set_timeout(600);
 
-    if (!rf69.init()) {
+    if (!rf69.init()) 
+    {
        Serial.println("RFM69 radio init failed");
        while (1);
     }
     Serial.println("RFM69 radio init OK!");
     // Defaults after init are 434.0MHz, modulation GFSK_Rb250Fd250, +13dbM (for low power module)
     // No encryption
-    if (!rf69.setFrequency(RF69_FREQ)) {
+    if (!rf69.setFrequency(RF69_FREQ)) 
+    {
        Serial.println("setFrequency failed");
     }
     // If you are using a high power RF69 eg RFM69HW, you *must* set a Tx power with the
@@ -114,21 +108,13 @@ void setup() {
     
     Serial.print("RFM69 radio @");  Serial.print((int)RF69_FREQ);  Serial.println(" MHz");
 
-    if (bmp180.begin())
-       Serial.println("BMP180 init success");
-    else
-    {
-       Serial.println("BMP180 init fail (disconnected?)\n\n");
-    }
-
     //timer.setInterval(10, run_10ms);
     run_1sec_handle.set_interval(1000, RUN_RECURRING, run_1000ms);
-    run_10sec_handle.set_interval(1000, RUN_RECURRING, run_10s);
+    run_led_off_handle.set_interval(5000, RUN_ONCE, run_led_off);
 }
 
 void loop() {
     run_1sec_handle.run();
-    run_10sec_handle.run();
     byte i;
 
     if (Serial.available() > 0) 
@@ -136,9 +122,6 @@ void loop() {
         char cin = Serial.read();
         parse_serial(cin);
     }
-
-    //char radiopacket[30];  // = "Hello World #";
-
 }
 
 #define MAX_VALUE_LEN  16
@@ -159,12 +142,18 @@ void parse_serial(char c)
             if (c=='<') 
             {
                state++;
+               digitalWrite(LED_PIN,HIGH);
+               run_led_off_handle.delay_task(5000);
                memset(value_str,0x00, MAX_VALUE_LEN);
                value_pos = 0;
+               watchdog.clear();
             }   
             break;
         case 1:
-            if (c==UNIT_ID) state++;
+            if (c==UNIT_ID) 
+            {
+                state++;
+            }
             else state=0; 
             break;
         case 2:
@@ -275,66 +264,14 @@ void radiate_msg( char *radio_msg ) {
     }
 }
 
-void ReadSensors(void){
-  char status;
-  if (++read_turn > 4) read_turn = 1;
-  switch(read_turn)
-  {
-     case 1:
-         status = bmp180.startTemperature();
-         break;
-      case 2:  
-         status= bmp180.getTemperature(Temp_BMP180);
-         break;
-     case 3:  
-         status = bmp180.startPressure(3);
-         break;
-      case 4:  
-         status= bmp180.getPressure(Pressure_BMP180,Temp_BMP180);
-         break;
-    }
+void run_1000ms(void)
+{
+   // TODO
 }
 
-void Blink(byte PIN, byte DELAY_MS, byte loops){
-    for (byte i=0; i<loops; i++) {
-        digitalWrite(PIN,HIGH);
-        delay(DELAY_MS);
-        digitalWrite(PIN,LOW);
-        delay(DELAY_MS);
-    }
-}
-
-void run_10s(void){
-   ReadSensors();
+void run_led_off(void)
+{
+    digitalWrite(LED_PIN,LOW);
 }
 
 
-void run_1000ms(void){
-   //Serial.println(MyTime.second);
-   if (++MyTime.second > 59 ){
-      MyTime.second = 0;
-      if (++msg_interval_minutes >= MINUTES_BTW_MSG) {
-            msg_interval_minutes = 0;
-            transmit_one_msg();
-      }
-      if (++MyTime.minute > 59 ){    
-         MyTime.minute = 0;
-         if (++MyTime.hour > 23){
-            MyTime.hour = 0;
-         }
-      }   
-   }
-}
-
-void transmit_one_msg(void){
-    if (++rad_turn > 2) rad_turn = 1;
-    switch(rad_turn)
-    {
-        case 1:
-          if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Temp2",float(Temp_BMP180),"") > 0 ) radiate_msg(radio_packet);
-          break;
-        case 2:   
-          if (ConvertFloatSensorToJsonRadioPacket(ZONE,"P_mb",float(Pressure_BMP180),"") > 0 ) radiate_msg(radio_packet);
-         break;
-    }
-}
