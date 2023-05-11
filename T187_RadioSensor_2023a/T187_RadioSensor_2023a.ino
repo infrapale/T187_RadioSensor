@@ -1,11 +1,14 @@
-/**
+/*********************************************************************
  *  T187 Radio Sensor
- *  Read sensor values and send over RFM69
- *  - BMP180 Temperature and humidity
+ *  Read sensor values via UART transmit using RFM69
+ *  
  *  - Serial sensor messages
- *  - 
- * 
- */
+ *  - <OT1:-12.3>
+ *  - <OT1:-12.3>
+ *  - <OT1:-12.3>
+ ********************************************************************
+ *   
+ *******************************************************************/
 // Define message groups to be supported (Astrid.h)
 #include <AstridAddrSpace.h>
 
@@ -200,9 +203,6 @@ void parse_serial(char c)
                                 break;
                             case  '2': 
                                 if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Light2",f_value,"") > 0 ) radiate_msg(radio_packet);
-                                break;
-                            case  '3': 
-                                if (ConvertFloatSensorToJsonRadioPacket(ZONE,"Light3",f_value,"") > 0 ) radiate_msg(radio_packet);
                                 break;
                         }
                         
