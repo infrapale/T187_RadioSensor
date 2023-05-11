@@ -7,7 +7,7 @@
  *  - <OT1:-12.3>
  *  - <OT1:-12.3>
  ********************************************************************
- *   
+ *  https://github.com/infrapale/T187_RadioSensor 
  *******************************************************************/
 // Define message groups to be supported (Astrid.h)
 #include <AstridAddrSpace.h>
